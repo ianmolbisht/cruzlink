@@ -2,7 +2,7 @@
  * Service to monitor IoT sensor for impact detection
  */
 
-const IOT_SENSOR_URL = "http://192.168.187.194/"
+const IOT_SENSOR_URL = "http://192.168.187.194/status"
 
 // Polling interval in milliseconds (checks every second)
 const POLLING_INTERVAL = 1000
@@ -31,32 +31,48 @@ export class IoTSensorMonitor {
   /**
    * Start monitoring the IoT sensor
    */
-  public startMonitoring(): void {
-    if (this.intervalId) return // Already monitoring
+  private lastFetchFailedAt = 0
 
-    this.intervalId = setInterval(async () => {
-      try {
-        const data = await this.fetchSensorData()
+public startMonitoring(): void {
+  if (this.intervalId) return // Already monitoring
 
-        // Update connection status
+  this.intervalId = setInterval(async () => {
+    const now = Date.now()
+
+    // If last fetch failed, wait 10 seconds before trying again
+    if (this.connectionStatus === "error" && now - this.lastFetchFailedAt < 10000) {
+      return // skip this poll
+    }
+
+    try {
+      const data = await this.fetchSensorData()
+
+      // Successful fetch
+      if (this.connectionStatus !== "connected") {
         this.connectionStatus = "connected"
         this.connectionError = null
-
-        // If impact is detected and we're not in cooldown period
-        if (data.impact && Date.now() - this.lastImpactTime > this.IMPACT_COOLDOWN) {
-          console.log("Impact detected from IoT sensor:", data)
-          this.lastImpactTime = Date.now()
-          this.notifyCallbacks(data)
-        }
-      } catch (error) {
-        this.connectionStatus = "error"
-        this.connectionError = (error as Error).message
-        console.error("Error fetching sensor data:", error)
+        console.log("[IoT Monitor] Connected to IoT sensor")
       }
-    }, POLLING_INTERVAL)
 
-    console.log("IoT sensor monitoring started")
-  }
+      if (data.impact && now - this.lastImpactTime > this.IMPACT_COOLDOWN) {
+        console.log("[IoT Monitor] Impact detected:", data)
+        this.lastImpactTime = now
+        this.notifyCallbacks(data)
+      }
+    } catch (error) {
+      // Fetch failed
+      if (this.connectionStatus !== "error") {
+        console.warn("[IoT Monitor] Failed to connect to IoT sensor:", (error as Error).message)
+      }
+      this.connectionStatus = "error"
+      this.connectionError = (error as Error).message
+      this.lastFetchFailedAt = Date.now() // mark failure time
+    }
+  }, POLLING_INTERVAL)
+
+  console.log("[IoT Monitor] Monitoring started")
+}
+
 
   /**
    * Stop monitoring the IoT sensor
@@ -100,39 +116,28 @@ export class IoTSensorMonitor {
   private async fetchSensorData(): Promise<SensorData> {
     const controller = new AbortController()
     const timeoutId = setTimeout(() => controller.abort(), 5000)
-
+  
     try {
       const response = await fetch(IOT_SENSOR_URL, {
         signal: controller.signal,
-        headers: {
-          Accept: "application/json",
-        },
+        headers: { Accept: "application/json" },
         mode: "cors",
       })
-
+      
       clearTimeout(timeoutId)
-
+  
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`)
       }
-
+  
       const data = await response.json()
       return data as SensorData
     } catch (error) {
       clearTimeout(timeoutId)
-      console.warn("Could not connect to IoT sensor, simulating data:", error)
-
-      // Fallback simulated response
-      const shouldSimulateImpact = Math.random() < 0.05
-      return {
-        impact: shouldSimulateImpact,
-        impactForce: shouldSimulateImpact ? Math.floor(Math.random() * 10) + 5 : 0,
-        timestamp: Date.now(),
-        batteryLevel: 85,
-      }
+      throw error // ❗ Don't simulate here
     }
   }
-
+  
   /**
    * Notify all registered callbacks about the impact
    */
@@ -149,14 +154,7 @@ export class IoTSensorMonitor {
   /**
    * Simulate an impact event (for testing)
    */
-  public simulateImpact(force = 10): void {
-    console.log("Simulating impact with force:", force)
-    this.notifyCallbacks({
-      impact: true,
-      impactForce: force,
-      timestamp: Date.now(),
-    })
-  }
+ 
 }
 
 // Singleton instance

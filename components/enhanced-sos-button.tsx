@@ -1,9 +1,6 @@
-"use client"
-
 import { useState, useEffect, useRef } from "react"
 import { AlertCircle, Phone, MapPin } from "lucide-react"
 import { motion } from "framer-motion"
-
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -23,7 +20,7 @@ export function EnhancedSOSButton() {
   const [sosActivated, setSosActivated] = useState(false)
   const [pulsate, setPulsate] = useState(true)
   const [emergencyContacts, setEmergencyContacts] = useState([
-    { name: "Emergency Services", phone: "911" },
+    { name: "Emergency Services", phone: "+917060208778" },
     { name: "John Smith", phone: "+1 (555) 123-4567" },
   ])
   const countdownTimerRef = useRef<NodeJS.Timeout | null>(null)
@@ -40,15 +37,25 @@ export function EnhancedSOSButton() {
 
   // Set up IoT sensor monitoring
   useEffect(() => {
-    // Start monitoring the IoT sensor
-    iotSensorMonitor.startMonitoring()
+    let retryTimer: NodeJS.Timeout | null = null
+    let isMonitoring = false
 
-    // Register impact callback
+    const startMonitoringSafely = async () => {
+      try {
+        await iotSensorMonitor.startMonitoring()
+        isMonitoring = true
+        console.log("IoT sensor monitoring started successfully.")
+      } catch (error) {
+        console.error("Failed to start IoT monitoring:", error)
+        // Retry after 10 seconds if failed
+        retryTimer = setTimeout(startMonitoringSafely, 10000)
+      }
+    }
+
     const handleImpact = (data: any) => {
       console.log("Impact detected from IoT sensor:", data)
-      // Only trigger if not already in SOS mode
       if (!showDialog) {
-        handleSOSPress(true) // Pass true to indicate it's from IoT sensor
+        handleSOSPress(true)
 
         toast({
           title: "Crash Detected!",
@@ -58,12 +65,34 @@ export function EnhancedSOSButton() {
       }
     }
 
+    // Monitor the connection status
+    const checkConnectionStatus = () => {
+      const status = iotSensorMonitor.getConnectionStatus()
+      if (status.status === "disconnected") {
+        console.log("IoT sensor disconnected, attempting to reconnect...")
+        startMonitoringSafely()
+      }
+    }
+
+    // Try to start monitoring initially
+    startMonitoringSafely()
+
+    // Check the connection status every 10 seconds
+    const connectionStatusInterval = setInterval(checkConnectionStatus, 10000)
+
+    // Register impact callback
     iotSensorMonitor.onImpact(handleImpact)
 
-    // Clean up on unmount
+    // Cleanup
     return () => {
-      iotSensorMonitor.stopMonitoring()
-      iotSensorMonitor.removeCallback(handleImpact)
+      if (isMonitoring) {
+        iotSensorMonitor.stopMonitoring()
+        iotSensorMonitor.removeCallback(handleImpact)
+      }
+      if (retryTimer) {
+        clearTimeout(retryTimer)
+      }
+      clearInterval(connectionStatusInterval)
     }
   }, [showDialog, toast])
 
@@ -98,9 +127,8 @@ export function EnhancedSOSButton() {
   }
 
   const simulateEmergencyAlerts = async () => {
-    // Get current location
-    let locationStr = "Unknown location"
-
+    let locationStr = "Unknown location";
+  
     try {
       if (navigator.geolocation) {
         const position = await new Promise<GeolocationPosition>((resolve, reject) => {
@@ -108,42 +136,50 @@ export function EnhancedSOSButton() {
             enableHighAccuracy: true,
             timeout: 5000,
             maximumAge: 0,
-          })
-        })
-
-        const { latitude, longitude } = position.coords
-        locationStr = `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`
+          });
+        });
+  
+        const { latitude, longitude } = position.coords;
+        locationStr = `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
       }
     } catch (error) {
-      console.error("Failed to get location:", error)
+      console.error("Failed to get location:", error);
     }
-
-    // Simulate emergency call
+  
+    // Simulate in toast
     toast({
       title: "Emergency Call Simulated",
       description: `Would call ${emergencyContacts[0].name} at ${emergencyContacts[0].phone}`,
-    })
-
-    // Simulate SMS to all emergency contacts
+    });
+  
     toast({
       title: "Emergency SMS Simulated",
       description: `Would send alert messages to ${emergencyContacts.length} emergency contacts with location: ${locationStr}`,
-    })
-
-    // Log the actions for debugging
-    console.log("Emergency alerts simulated:", {
-      location: locationStr,
-      contacts: emergencyContacts,
-    })
-  }
-
+    });
+  
+    // Actually send real SMS
+    try {
+      await fetch("/api/send-sms", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          to: emergencyContacts[0].phone, // send to first contact for now
+          message: `🚨 SOS Alert! Possible accident detected. Location: ${locationStr}`,
+        }),
+      });
+  
+      console.log("SMS sent successfully");
+    } catch (error) {
+      console.error("Failed to send SMS:", error);
+    }
+  };
+  
   const cancelSOS = () => {
     setShowDialog(false)
     setIsPressed(false)
     setSosActivated(false)
-    setCountdown(15) // Reset to 15 seconds
+    setCountdown(15)
 
-    // Clear countdown timer
     if (countdownTimerRef.current) {
       clearInterval(countdownTimerRef.current)
       countdownTimerRef.current = null
