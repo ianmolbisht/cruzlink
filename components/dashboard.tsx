@@ -2,8 +2,8 @@
 
 import { useState } from "react"
 import Link from "next/link"
+import { useRouter } from "next/navigation" // ✅ Correct import for app/ router
 import { HardHat, MapPin, Bluetooth, Phone, Music, Heart, Navigation, User, Mic, AlertTriangle } from "lucide-react"
-
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { EnhancedSOSButton } from "@/components/enhanced-sos-button"
@@ -18,6 +18,12 @@ import { IoTSensorStatus } from "@/components/iot-sensor-status"
 export function Dashboard() {
   const [showWeatherAlert, setShowWeatherAlert] = useState(true)
   const [showVoiceAssistant, setShowVoiceAssistant] = useState(false)
+  
+  const router = useRouter(); // ✅ Works properly now
+
+  const handleAI = () => {
+    router.push('/ai-assistant') // ✅ Notice leading '/'
+  };
 
   return (
     <MobileLayout>
@@ -29,7 +35,7 @@ export function Dashboard() {
               <h1 className="text-xl font-bold">CruzLink</h1>
             </div>
             <div className="flex items-center gap-2">
-              <Button variant="ghost" size="icon" className="rounded-full" onClick={() => setShowVoiceAssistant(true)}>
+              <Button variant="ghost" size="icon" className="rounded-full" onClick={handleAI}>
                 <Mic className="h-5 w-5" />
                 <span className="sr-only">Voice Assistant</span>
               </Button>
